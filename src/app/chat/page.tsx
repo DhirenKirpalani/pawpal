@@ -11,24 +11,80 @@ interface Message {
   vetRecommended?: boolean;
 }
 
+interface PetInfo {
+  petName: string;
+  species: string;
+  breed?: string;
+}
+
 export default function ChatPage() {
   const searchParams = useSearchParams();
   const [phone, setPhone] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [petInfo, setPetInfo] = useState<PetInfo | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const phoneParam = searchParams.get('phone');
-    if (phoneParam) {
-      setPhone(phoneParam);
+    const lastPhone = localStorage.getItem('last_phone');
+    
+    const phoneToUse = phoneParam || lastPhone || '';
+    
+    if (phoneToUse) {
+      setPhone(phoneToUse);
+      
+      // Save as last used phone
+      localStorage.setItem('last_phone', phoneToUse);
+      
+      // Load chat history from localStorage
+      const savedMessages = localStorage.getItem(`chat_${phoneToUse}`);
+      if (savedMessages) {
+        setMessages(JSON.parse(savedMessages));
+      }
+      
+      // Load pet info from localStorage first
+      const savedPetInfo = localStorage.getItem(`pet_${phoneToUse}`);
+      if (savedPetInfo) {
+        setPetInfo(JSON.parse(savedPetInfo));
+      }
+      
+      // Fetch fresh pet info from API
+      fetch(`/api/profile?phone=${encodeURIComponent(phoneToUse)}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.pet) {
+            const petInfo = {
+              petName: data.pet.name,
+              species: data.pet.species,
+              breed: data.pet.breed,
+            };
+            setPetInfo(petInfo);
+            localStorage.setItem(`pet_${phoneToUse}`, JSON.stringify(petInfo));
+          }
+        })
+        .catch(() => {});
     }
   }, [searchParams]);
 
   useEffect(() => {
+    // Save chat history to localStorage whenever messages change
+    if (phone && messages.length > 0) {
+      localStorage.setItem(`chat_${phone}`, JSON.stringify(messages));
+    }
+  }, [messages, phone]);
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  const clearChat = () => {
+    if (phone && confirm('Clear chat history?')) {
+      setMessages([]);
+      localStorage.removeItem(`chat_${phone}`);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,16 +142,30 @@ export default function ChatPage() {
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-2xl font-bold">🐾 PawPal Chat</h1>
-                {phone && (
+                {petInfo ? (
+                  <p className="text-sm text-indigo-100">
+                    Chatting about {petInfo.petName} ({petInfo.species}{petInfo.breed ? `, ${petInfo.breed}` : ''})
+                  </p>
+                ) : phone ? (
                   <p className="text-sm text-indigo-100">Phone: {phone}</p>
-                )}
+                ) : null}
               </div>
-              <Link
-                href="/"
-                className="text-white hover:text-indigo-100 text-sm"
-              >
-                ← Home
-              </Link>
+              <div className="flex items-center gap-3">
+                {phone && messages.length > 0 && (
+                  <button
+                    onClick={clearChat}
+                    className="text-white hover:text-indigo-100 text-sm underline"
+                  >
+                    Clear Chat
+                  </button>
+                )}
+                <Link
+                  href="/"
+                  className="text-white hover:text-indigo-100 text-sm"
+                >
+                  ← Home
+                </Link>
+              </div>
             </div>
           </div>
 

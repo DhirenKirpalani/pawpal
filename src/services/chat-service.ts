@@ -56,21 +56,11 @@ export class ChatService {
     const user = await this.userRepository.findOrCreate(request.phone, detectedLanguage);
 
     const pet = await this.petRepository.findByUserId(user.id);
-
-    if (!pet) {
-      return {
-        intent: 'GENERAL',
-        riskLevel: null,
-        reply: this.getOnboardingMessage(user.preferred_language),
-        needsOnboarding: true,
-      };
-    }
-
-    const petContext = await this.petContextLoader.load(user.id);
+    const petContext = pet ? await this.petContextLoader.load(user.id) : null;
 
     const intentExtraction = await this.intentExtractor.extract(
       request.message,
-      pet.species
+      pet?.species || 'dog'
     );
 
     let decisionResult: any = {};
@@ -81,31 +71,35 @@ export class ChatService {
         if (intentExtraction.symptoms && intentExtraction.symptoms.length > 0) {
           const analysis = this.symptomEngine.analyze(
             intentExtraction.symptoms,
-            pet.species
+            pet?.species || 'dog'
           );
           decisionResult = analysis;
           riskLevel = analysis.riskLevel;
 
-          await this.eventLogger.logSymptomEvent(
-            pet.id,
-            intentExtraction.symptoms,
-            intentExtraction.urgency || 'UNKNOWN'
-          );
+          if (pet) {
+            await this.eventLogger.logSymptomEvent(
+              pet.id,
+              intentExtraction.symptoms,
+              intentExtraction.urgency || 'UNKNOWN'
+            );
+          }
         }
         break;
 
       case 'FOOD':
         if (intentExtraction.foods && intentExtraction.foods.length > 0) {
-          const analysis = this.foodEngine.analyze(intentExtraction.foods, pet.species);
+          const analysis = this.foodEngine.analyze(intentExtraction.foods, pet?.species || 'dog');
           decisionResult = analysis;
           riskLevel = analysis.riskLevel;
 
-          await this.eventLogger.logFoodEvent(
-            pet.id,
-            intentExtraction.foods,
-            analysis.safe,
-            analysis.riskLevel
-          );
+          if (pet) {
+            await this.eventLogger.logFoodEvent(
+              pet.id,
+              intentExtraction.foods,
+              analysis.safe,
+              analysis.riskLevel
+            );
+          }
         }
         break;
 
@@ -113,16 +107,18 @@ export class ChatService {
         if (intentExtraction.behaviors && intentExtraction.behaviors.length > 0) {
           const analysis = this.behaviorEngine.analyze(
             intentExtraction.behaviors,
-            pet.species
+            pet?.species || 'dog'
           );
           decisionResult = analysis;
           riskLevel = analysis.riskLevel;
 
-          await this.eventLogger.logBehaviorEvent(
-            pet.id,
-            intentExtraction.behaviors,
-            analysis.riskLevel
-          );
+          if (pet) {
+            await this.eventLogger.logBehaviorEvent(
+              pet.id,
+              intentExtraction.behaviors,
+              analysis.riskLevel
+            );
+          }
         }
         break;
 

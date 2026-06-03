@@ -66,7 +66,6 @@ Return a JSON object with the classification.`,
         type: 'json_schema',
         json_schema: {
           name: 'intent_extraction',
-          strict: true,
           schema: {
             type: 'object',
             properties: {
