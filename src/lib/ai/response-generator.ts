@@ -42,7 +42,6 @@ export class ResponseGenerator {
         type: 'json_schema',
         json_schema: {
           name: 'pawpal_response',
-          strict: true,
           schema: {
             type: 'object',
             properties: {
