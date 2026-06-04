@@ -1,0 +1,10 @@
+# robots.txt for PawPal.ID
+User-agent: *
+Allow: /
+Disallow: /api/
+
+# Sitemap
+Sitemap: https://pawpal.id/sitemap.xml
+
+# Crawl-delay for polite crawling
+Crawl-delay: 1
