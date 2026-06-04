@@ -47,4 +47,21 @@ export class UserRepository {
       preferred_language: preferredLanguage,
     });
   }
+
+  async findById(userId: string): Promise<User | null> {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', userId)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return null;
+      }
+      throw new Error(`Failed to find user by ID: ${error.message}`);
+    }
+
+    return data;
+  }
 }

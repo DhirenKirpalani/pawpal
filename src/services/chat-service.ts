@@ -11,6 +11,7 @@ import { EventLogger } from '@/lib/events/event-logger';
 import { Intent, RiskLevel } from '@/types/db';
 import { detectLanguage } from '@/lib/ai/language-detector';
 import { PawPalResponse } from '@/lib/ai/types';
+import { FeatureService } from './feature-service';
 
 export interface ChatRequest {
   phone: string;
@@ -37,6 +38,7 @@ export class ChatService {
   private behaviorEngine: BehaviorEngine;
   private petContextLoader: PetContextLoader;
   private eventLogger: EventLogger;
+  private featureService: FeatureService;
 
   constructor() {
     this.userRepository = new UserRepository();
@@ -49,6 +51,7 @@ export class ChatService {
     this.behaviorEngine = new BehaviorEngine();
     this.petContextLoader = new PetContextLoader();
     this.eventLogger = new EventLogger();
+    this.featureService = new FeatureService();
   }
 
   async processMessage(request: ChatRequest): Promise<ChatResponse> {
@@ -57,6 +60,29 @@ export class ChatService {
 
     const pet = await this.petRepository.findByUserId(user.id);
     const petContext = pet ? await this.petContextLoader.load(user.id) : null;
+
+    if (pet) {
+      const featureResponse = await this.featureService.processFeatureCommand({
+        petId: pet.id,
+        message: request.message,
+        language: user.preferred_language
+      });
+
+      if (featureResponse.handled) {
+        await this.conversationRepository.create({
+          user_id: user.id,
+          message: request.message,
+          intent: 'GENERAL',
+        });
+
+        return {
+          intent: 'GENERAL',
+          riskLevel: null,
+          reply: featureResponse.message,
+          needsOnboarding: false,
+        };
+      }
+    }
 
     const intentExtraction = await this.intentExtractor.extract(
       request.message,

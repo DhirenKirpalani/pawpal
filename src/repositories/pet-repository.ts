@@ -58,4 +58,17 @@ export class PetRepository {
 
     return data;
   }
+
+  async getAll(): Promise<Pet[]> {
+    const { data, error } = await supabase
+      .from('pets')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      throw new Error(`Failed to get all pets: ${error.message}`);
+    }
+
+    return data || [];
+  }
 }
