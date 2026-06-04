@@ -69,6 +69,60 @@ export default function Home() {
           </div>
         </div>
 
+        {/* COMPREHENSIVE FEATURES */}
+        <div className="max-w-5xl mx-auto mb-16">
+          <h2 className="text-4xl font-bold text-gray-800 mb-4 text-center">
+            Everything Your Pet Needs
+          </h2>
+          <p className="text-center text-gray-600 mb-12 text-lg">
+            Personalized care, smart reminders, and health tracking — all in WhatsApp
+          </p>
+          
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {/* AI Health Advice */}
+            <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all border border-purple-100">
+              <div className="text-4xl mb-3">🤖</div>
+              <h3 className="text-xl font-bold text-gray-800 mb-2">AI Health Advice</h3>
+              <p className="text-gray-600 text-sm">Ask about symptoms, food safety, behavior issues, and get instant expert guidance</p>
+            </div>
+
+            {/* Smart Reminders */}
+            <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all border border-purple-100">
+              <div className="text-4xl mb-3">⏰</div>
+              <h3 className="text-xl font-bold text-gray-800 mb-2">Smart Reminders</h3>
+              <p className="text-gray-600 text-sm">Never miss vaccines, deworming, vet appointments, or medication schedules</p>
+            </div>
+
+            {/* Feeding Tracker */}
+            <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all border border-purple-100">
+              <div className="text-4xl mb-3">🍖</div>
+              <h3 className="text-xl font-bold text-gray-800 mb-2">Feeding Tracker</h3>
+              <p className="text-gray-600 text-sm">Personalized meal plans, portion sizes, and supplement schedules based on age & breed</p>
+            </div>
+
+            {/* Potty Training */}
+            <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all border border-purple-100">
+              <div className="text-4xl mb-3">🚽</div>
+              <h3 className="text-xl font-bold text-gray-800 mb-2">Potty Training</h3>
+              <p className="text-gray-600 text-sm">Track bathroom habits, success rates, and get reminders to help with training</p>
+            </div>
+
+            {/* Health Notes */}
+            <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all border border-purple-100">
+              <div className="text-4xl mb-3">📝</div>
+              <h3 className="text-xl font-bold text-gray-800 mb-2">Health Journal</h3>
+              <p className="text-gray-600 text-sm">Log symptoms, incidents, unusual behavior — share with your vet when needed</p>
+            </div>
+
+            {/* Lost Pet Alert */}
+            <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all border border-purple-100">
+              <div className="text-4xl mb-3">🔔</div>
+              <h3 className="text-xl font-bold text-gray-800 mb-2">Lost Pet Alert</h3>
+              <p className="text-gray-600 text-sm">Instant notifications and tracking if your pet goes missing</p>
+            </div>
+          </div>
+        </div>
+
         {/* HOW IT WORKS */}
         <div className="max-w-3xl mx-auto mb-16 bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-8">
           <h2 className="text-3xl font-bold text-gray-800 mb-8 text-center">
