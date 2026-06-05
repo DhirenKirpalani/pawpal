@@ -238,7 +238,7 @@ export default function CompanionChatPage() {
   return (
     <div className="h-screen flex flex-col bg-gradient-to-br from-violet-50 via-purple-50 to-fuchsia-50">
       {/* Nav Bar */}
-      <div className="bg-white border-b border-purple-100 px-4 py-3 shadow-sm">
+      <div className="bg-white border-b border-purple-100 px-4 py-3 shadow-sm safe-top">
         <div className="container mx-auto max-w-4xl flex items-center justify-between">
           <a href="/" className="flex items-center gap-2 text-purple-600 hover:text-purple-800 transition font-semibold text-sm">
             ← Home
@@ -301,7 +301,7 @@ export default function CompanionChatPage() {
         {/* Chat Container */}
         <div className="flex-1 flex flex-col bg-white rounded-2xl shadow-2xl overflow-hidden">
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3" style={{ WebkitOverflowScrolling: 'touch' }}>
             {messages.map((message, index) => (
               <motion.div
                 key={index}
@@ -404,7 +404,7 @@ export default function CompanionChatPage() {
           </AnimatePresence>
 
           {/* Input */}
-          <div className="border-t border-gray-200 p-4">
+          <div className="border-t border-gray-200 p-4 pb-safe">
             <form onSubmit={handleSubmit} className="flex gap-2">
               <input
                 type="text"
