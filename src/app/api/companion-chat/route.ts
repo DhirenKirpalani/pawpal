@@ -17,7 +17,7 @@ const RequestSchema = z.object({
   lang: z.enum(['en', 'id']),
   emotionalEntry: z.enum(['worried', 'checking', 'off', 'celebrate']).nullable().optional(),
   petType: z.enum(['cat', 'dog']).nullable().optional(),
-  image: z.string().max(5_000_000).nullable().optional(), // base64 data URL ~5MB
+  image: z.string().max(2_000_000).nullable().optional(), // base64 JPEG ≤1024px ≈ 200–400 KB
 });
 
 /* ── In-memory rate limiter ── */
@@ -62,7 +62,7 @@ function detectEmotionFromMessage(message: string, lang: 'en' | 'id'): EmotionHi
 }
 
 /* ── Build emotion-aware system prompt ── */
-function buildSystemPrompt(petName: string | null, petType: 'cat' | 'dog' | null, lang: 'en' | 'id', emotion: EmotionHint): string {
+function buildSystemPrompt(petName: string | null, petType: 'cat' | 'dog' | null, lang: 'en' | 'id', emotion: EmotionHint, hasImage?: boolean): string {
   const pet = petName || (lang === 'id' ? 'hewan peliharaannya' : 'their pet');
   const typeLabel = petType === 'cat'
     ? (lang === 'id' ? 'kucing' : 'cat')
@@ -89,6 +89,16 @@ function buildSystemPrompt(petName: string | null, petType: 'cat' | 'dog' | null
       : 'The user is CALM. Keep it friendly and conversational.';
   }
 
+  const visionDirective = hasImage && !petType
+    ? (lang === 'id'
+      ? 'GAMBAR DIKIRIM: User mengirimkan foto. LIHAT gambarnya dan identifikasi apakah itu kucing atau anjing. Jawab dengan menyebutkan jenis hewannya dan tanyakan konfirmasi dengan hangat.'
+      : 'IMAGE PROVIDED: The user sent a photo. LOOK at the image and identify whether it\'s a cat or a dog. Acknowledge what you see and confirm warmly.')
+    : hasImage
+    ? (lang === 'id'
+      ? 'GAMBAR DIKIRIM: Gunakan informasi visual dari foto untuk membantu user.'
+      : 'IMAGE PROVIDED: Use the visual information from the photo to help the user.')
+    : '';
+
   const typeDirective = typeLabel
     ? (lang === 'id'
       ? `HEWAN: ${pet} (${typeLabel}). Kasih saran yang spesifik buat ${typeLabel}, jangan salah kasih saran buat hewan lain.`
@@ -98,7 +108,9 @@ function buildSystemPrompt(petName: string | null, petType: 'cat' | 'dog' | null
   if (lang === 'id') {
     return `Kamu adalah PawPal, teman curhat soal kesehatan hewan peliharaan. Kamu BUKAN dokter hewan, kamu teman yang peduli dan berpengetahuan.
 
-${emotionDirective}
+${emotionDirective}${visionDirective ? `
+
+${visionDirective}` : ''}
 
 GAYA BICARA:
 - Kasual, hangat, seperti teman chat — bukan robot medis
@@ -130,7 +142,9 @@ FORMAT PENTING: [Sources: ...] harus di baris terpisah di akhir, jangan di tenga
 
   return `You are PawPal, a caring and knowledgeable pet health companion. NOT a medical system — a warm, supportive friend.
 
-${emotionDirective}
+${emotionDirective}${visionDirective ? `
+
+${visionDirective}` : ''}
 
 TONE RULES:
 - Warm, conversational — like texting a caring friend
@@ -224,7 +238,7 @@ export async function POST(request: NextRequest) {
       ? (emotionalEntry === 'worried' || emotionalEntry === 'off' ? 'worried' : emotionalEntry === 'celebrate' ? 'celebrating' : 'calm')
       : detectEmotionFromMessage(lastUserMsg?.content || '', lang);
 
-    const systemPrompt = buildSystemPrompt(petName ?? null, petType ?? null, lang, detectedEmotion);
+    const systemPrompt = buildSystemPrompt(petName ?? null, petType ?? null, lang, detectedEmotion, !!image);
 
     // 4. Build OpenAI messages (text-only or vision)
     const apiMessages: any[] = [{ role: 'system', content: systemPrompt }];
@@ -235,7 +249,7 @@ export async function POST(request: NextRequest) {
         apiMessages.push({
           role: 'user',
           content: [
-            { type: 'text', text: m.content || 'What do you see in this image?' },
+            { type: 'text', text: m.content || 'Please look at this image and tell me what you see, especially if it\'s a cat or a dog.' },
             { type: 'image_url', image_url: { url: image, detail: 'auto' } },
           ],
         });
