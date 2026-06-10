@@ -401,6 +401,7 @@ export default function CompanionChatPage() {
   const memorySaved = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const [sessionId, setSessionId] = useState<string>(() => genId());
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -514,6 +515,25 @@ export default function CompanionChatPage() {
     setMessageCount(prev => prev + 1);
     trackMessage('user', !!image);
   };
+
+  // Auto-focus the chat input whenever the assistant finishes responding
+  const prevLoadingRef = useRef(loading);
+  useEffect(() => {
+    const wasLoading = prevLoadingRef.current;
+    prevLoadingRef.current = loading;
+    if (wasLoading && !loading && inputRef.current) {
+      // Small delay to let React finish rendering the new message
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
+  }, [loading]);
+
+  // Auto-focus on first load after onboarding messages appear
+  useEffect(() => {
+    if (hydrated && messages.length > 0 && inputRef.current) {
+      const t = setTimeout(() => inputRef.current?.focus(), 600);
+      return () => clearTimeout(t);
+    }
+  }, [hydrated]);
 
   const handleEmotionalEntry = (type: EmotionalEntry) => {
     setEmotionalEntry(type);
@@ -742,32 +762,36 @@ export default function CompanionChatPage() {
 
     // Check if this is the pet type (right after name)
     if (petName && !petType && messageCount === 1) {
-      const lower = userMessage.toLowerCase();
-      let detected: 'cat' | 'dog' | null = null;
+      // If user sent a photo, let the AI identify the pet type from the image
+      if (!imagePreview) {
+        const lower = userMessage.toLowerCase();
+        let detected: 'cat' | 'dog' | null = null;
 
-      if (lower.includes('cat') || lower.includes('kucing') || lower.includes('kitten')) detected = 'cat';
-      else if (lower.includes('dog') || lower.includes('anjing') || lower.includes('puppy')) detected = 'dog';
+        if (lower.includes('cat') || lower.includes('kucing') || lower.includes('kitten')) detected = 'cat';
+        else if (lower.includes('dog') || lower.includes('anjing') || lower.includes('puppy')) detected = 'dog';
 
-      if (detected) {
-        setPetType(detected);
+        if (detected) {
+          setPetType(detected);
+          setLoading(true);
+          const typeLabel = detected === 'cat' ? (lang === 'id' ? 'kucing' : 'cat') : (lang === 'id' ? 'anjing' : 'dog');
+          setTimeout(() => {
+            addAssistantMessage(t('onboarding_welcome_type', lang, { name: petName, type: typeLabel }));
+            setLoading(false);
+            setStatusMessage(t('status_building', lang, { name: petName }));
+            setConversationStarted(true);
+          }, 800);
+          return;
+        }
+
+        // Couldn't detect — ask again
         setLoading(true);
-        const typeLabel = detected === 'cat' ? (lang === 'id' ? 'kucing' : 'cat') : (lang === 'id' ? 'anjing' : 'dog');
         setTimeout(() => {
-          addAssistantMessage(t('onboarding_welcome_type', lang, { name: petName, type: typeLabel }));
+          addAssistantMessage(t('onboarding_type_retry', lang, { name: petName }));
           setLoading(false);
-          setStatusMessage(t('status_building', lang, { name: petName }));
-          setConversationStarted(true);
-        }, 800);
+        }, 600);
         return;
       }
-
-      // Couldn't detect — ask again
-      setLoading(true);
-      setTimeout(() => {
-        addAssistantMessage(t('onboarding_type_retry', lang, { name: petName }));
-        setLoading(false);
-      }, 600);
-      return;
+      // imagePreview is set → fall through to API so vision can identify the pet
     }
 
     // Check for feature commands before hitting the AI
@@ -805,7 +829,20 @@ export default function CompanionChatPage() {
       // Clear image preview after sending
       if (imagePreview) clearImagePreview();
 
-      if (!res.ok || !res.body) {
+      if (!res.ok) {
+        const errBody = await res.text().catch(() => null);
+        let errMsg = t('error_connection', currentLang);
+        if (errBody) {
+          try {
+            const parsed = JSON.parse(errBody);
+            if (parsed.message) errMsg = parsed.message;
+          } catch {}
+        }
+        addAssistantMessage(errMsg);
+        setLoading(false);
+        return;
+      }
+      if (!res.body) {
         throw new Error('Failed to connect');
       }
 
@@ -1146,7 +1183,7 @@ export default function CompanionChatPage() {
                 className="p-2 text-purple-500"
                 title={t('nav_notifications_on', lang)}
                 animate={{ rotate: [0, 10, -10, 0] }}
-                transition={{ duration: 2, repeat: Infinity }}
+                transition={{ type: 'tween', duration: 2, repeat: Infinity }}
               >
                 <Bell size={18} />
               </motion.div>
@@ -1646,6 +1683,7 @@ export default function CompanionChatPage() {
               </motion.button>
 
               <motion.input
+                ref={inputRef}
                 type="text"
                 placeholder={
                   !petName

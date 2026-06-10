@@ -21,24 +21,39 @@ const RequestSchema = z.object({
 });
 
 /* ── In-memory rate limiter ── */
+// NOTE: In-memory → resets on serverless cold start. Good enough for MVP;
+//       upgrade to Redis/Upstash for production monetization.
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
-const RATE_LIMIT_MAX = 10; // 10 requests per minute per IP
+const RATE_LIMIT_MAX = 5; // 5 requests per minute per IP
 
-function checkRateLimit(ip: string): { allowed: boolean; retryAfter?: number } {
+const dailyLimitMap = new Map<string, { count: number; resetAt: number }>();
+const DAILY_WINDOW_MS = 24 * 60 * 60_000; // 24 hours
+const DAILY_LIMIT_MAX = 30; // 30 requests per day per IP
+
+function checkRateLimit(ip: string): { allowed: boolean; retryAfter?: number; daily?: boolean } {
   const now = Date.now();
-  const entry = rateLimitMap.get(ip);
 
-  if (!entry || now > entry.resetAt) {
+  // Per-minute check
+  const minEntry = rateLimitMap.get(ip);
+  if (!minEntry || now > minEntry.resetAt) {
     rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-    return { allowed: true };
+  } else if (minEntry.count >= RATE_LIMIT_MAX) {
+    return { allowed: false, retryAfter: Math.ceil((minEntry.resetAt - now) / 1000) };
+  } else {
+    minEntry.count++;
   }
 
-  if (entry.count >= RATE_LIMIT_MAX) {
-    return { allowed: false, retryAfter: Math.ceil((entry.resetAt - now) / 1000) };
+  // Daily check
+  const dayEntry = dailyLimitMap.get(ip);
+  if (!dayEntry || now > dayEntry.resetAt) {
+    dailyLimitMap.set(ip, { count: 1, resetAt: now + DAILY_WINDOW_MS });
+  } else if (dayEntry.count >= DAILY_LIMIT_MAX) {
+    return { allowed: false, retryAfter: Math.ceil((dayEntry.resetAt - now) / 1000), daily: true };
+  } else {
+    dayEntry.count++;
   }
 
-  entry.count++;
   return { allowed: true };
 }
 
@@ -91,12 +106,12 @@ function buildSystemPrompt(petName: string | null, petType: 'cat' | 'dog' | null
 
   const visionDirective = hasImage && !petType
     ? (lang === 'id'
-      ? 'GAMBAR DIKIRIM: User mengirimkan foto. LIHAT gambarnya dan identifikasi apakah itu kucing atau anjing. Jawab dengan menyebutkan jenis hewannya dan tanyakan konfirmasi dengan hangat.'
-      : 'IMAGE PROVIDED: The user sent a photo. LOOK at the image and identify whether it\'s a cat or a dog. Acknowledge what you see and confirm warmly.')
+      ? 'GAMBAR DIKIRIM — INI PENTING: User mengirimkan foto hewan peliharaannya. ANALISIS gambarnya secara visual. Identifikasi apakah itu KUCING atau ANJING. Setelah kamu lihat gambarnya, sebutkan jenis hewan yang kamu lihat dan sambut dengan hangat. JANGAN tanya "ini kucing atau anjing?" — langsung jawab berdasarkan apa yang kamu lihat di foto.'
+      : 'IMAGE PROVIDED — THIS IS IMPORTANT: The user sent a photo of their pet. ANALYZE the image visually. Identify whether it is a CAT or a DOG. After you look at the image, state what type of animal you see and welcome them warmly. DO NOT ask "is it a cat or a dog?" — just answer based on what you see in the photo.')
     : hasImage
     ? (lang === 'id'
-      ? 'GAMBAR DIKIRIM: Gunakan informasi visual dari foto untuk membantu user.'
-      : 'IMAGE PROVIDED: Use the visual information from the photo to help the user.')
+      ? 'GAMBAR DIKIRIM — INI PENTING: Gunakan informasi visual dari foto untuk membantu user. Analisis gambarnya dengan cermat sebelum menjawab.'
+      : 'IMAGE PROVIDED — THIS IS IMPORTANT: Use the visual information from the photo to help the user. Carefully analyze the image before responding.')
     : '';
 
   const typeDirective = typeLabel
@@ -214,8 +229,11 @@ export async function POST(request: NextRequest) {
     const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
     const rateCheck = checkRateLimit(ip);
     if (!rateCheck.allowed) {
+      const msg = rateCheck.daily
+        ? `Daily limit reached (${DAILY_LIMIT_MAX} chats/day). Come back tomorrow!`
+        : `Too fast — try again in ${rateCheck.retryAfter}s.`;
       return new Response(
-        JSON.stringify({ type: 'error', message: `Rate limit exceeded. Try again in ${rateCheck.retryAfter}s.` }) + '\n',
+        JSON.stringify({ type: 'error', message: msg }) + '\n',
         { status: 429, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Retry-After': String(rateCheck.retryAfter) } }
       );
     }
@@ -270,7 +288,7 @@ export async function POST(request: NextRequest) {
             model: MODELS.CHAT,
             messages: apiMessages,
             temperature: 0.7,
-            max_tokens: image ? 600 : 400, // more tokens for vision descriptions
+            max_tokens: image ? 350 : 300, // tight caps to control cost before monetization
             stream: true,
           });
 
