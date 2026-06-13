@@ -48,11 +48,15 @@ input, textarea, select {
 .animate-float-delay { animation: float 7s ease-in-out infinite; animation-delay: 1.5s; }
 .animate-float-slow { animation: float 8s ease-in-out infinite; animation-delay: 3s; }
 
+/* Replaced expensive box-shadow animation with static shadow + opacity pulse */
 @keyframes glow-pulse {
-  0%, 100% { box-shadow: 0 0 20px rgba(139, 92, 246, 0.4), 0 0 60px rgba(236, 72, 153, 0.2); }
-  50% { box-shadow: 0 0 40px rgba(139, 92, 246, 0.7), 0 0 80px rgba(236, 72, 153, 0.4); }
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
 }
-.animate-glow-pulse { animation: glow-pulse 3s ease-in-out infinite; }
+.animate-glow-pulse {
+  box-shadow: 0 0 30px rgba(139, 92, 246, 0.5), 0 0 70px rgba(236, 72, 153, 0.3);
+  animation: glow-pulse 3s ease-in-out infinite;
+}
 
 @keyframes heartbeat {
   0%, 100% { transform: scale(1); }
@@ -105,23 +109,23 @@ input, textarea, select {
 .animate-wave-2 { animation: wave-bar 0.8s ease-in-out infinite; animation-delay: 0.1s; }
 .animate-wave-3 { animation: wave-bar 0.8s ease-in-out infinite; animation-delay: 0.2s; }
 
-@keyframes mood-glow-worried {
-  0%, 100% { box-shadow: 0 0 30px rgba(251, 191, 36, 0.3); }
-  50% { box-shadow: 0 0 50px rgba(251, 191, 36, 0.6); }
+/* Replaced expensive box-shadow keyframes with static shadow + opacity */
+@keyframes mood-opacity-pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
 }
-.mood-worried { animation: mood-glow-worried 2s ease-in-out infinite; }
-
-@keyframes mood-glow-celebrate {
-  0%, 100% { box-shadow: 0 0 30px rgba(34, 197, 94, 0.3); }
-  50% { box-shadow: 0 0 60px rgba(34, 197, 94, 0.7), 0 0 100px rgba(236, 72, 153, 0.3); }
+.mood-worried {
+  box-shadow: 0 0 40px rgba(251, 191, 36, 0.45);
+  animation: mood-opacity-pulse 2s ease-in-out infinite;
 }
-.mood-celebrate { animation: mood-glow-celebrate 1.5s ease-in-out infinite; }
-
-@keyframes mood-glow-calm {
-  0%, 100% { box-shadow: 0 0 20px rgba(139, 92, 246, 0.2); }
-  50% { box-shadow: 0 0 40px rgba(139, 92, 246, 0.5); }
+.mood-celebrate {
+  box-shadow: 0 0 45px rgba(34, 197, 94, 0.5);
+  animation: mood-opacity-pulse 1.5s ease-in-out infinite;
 }
-.mood-calm { animation: mood-glow-calm 3s ease-in-out infinite; }
+.mood-calm {
+  box-shadow: 0 0 30px rgba(139, 92, 246, 0.35);
+  animation: mood-opacity-pulse 3s ease-in-out infinite;
+}
 
 @keyframes confetti-pop {
   0% { transform: scale(0) rotate(0deg); opacity: 0; }
@@ -129,3 +133,14 @@ input, textarea, select {
   100% { transform: scale(1) rotate(360deg); opacity: 1; }
 }
 .animate-confetti { animation: confetti-pop 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+
+/* ── Respect prefers-reduced-motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .animate-blob, .animate-float, .animate-float-delay, .animate-float-slow,
+  .animate-glow-pulse, .animate-heartbeat, .animate-paw-1, .animate-paw-2,
+  .animate-paw-3, .animate-paw-4, .animate-paw-5, .animate-gradient,
+  .animate-bounce-in, .animate-shake, .animate-wave-1, .animate-wave-2,
+  .animate-wave-3, .mood-worried, .mood-celebrate, .mood-calm {
+    animation: none !important;
+  }
+}

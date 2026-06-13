@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Home, Bell, MessageCircle, Paperclip, Mic, Send, PawPrint, Palette, PanelLeft, Search, Trash2, Plus, MapPin } from 'lucide-react';
+import { Bell, MessageCircle, Paperclip, Mic, Send, PawPrint, Palette, PanelLeft, Search, Trash2, Plus, MapPin, Menu } from 'lucide-react';
 import { track, trackMessage, trackEmotion, trackFeatureCommand, trackNotificationPermission } from '@/lib/analytics';
 import { t } from '@/lib/transify';
 import { handleFeature, type FeatureCard } from '@/lib/features/local-feature-manager';
@@ -132,22 +132,47 @@ function getBlobColor3(mood: EmotionalEntry): string {
   }
 }
 
+/* ── Mobile detection hook ── */
+function useIsMobile(threshold = 640): boolean {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < threshold);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, [threshold]);
+  return isMobile;
+}
+
+/* ── Page visibility hook ── */
+function usePageVisible(): boolean {
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    const handler = () => setVisible(!document.hidden);
+    document.addEventListener('visibilitychange', handler);
+    return () => document.removeEventListener('visibilitychange', handler);
+  }, []);
+  return visible;
+}
+
 /* ── Floating Paw Particles in background ── */
-function FloatingPaws({ mood }: { mood: EmotionalEntry }) {
-  const items = mood === 'worried' ? ['🐾', '💭', '😰'] :
-    mood === 'off' ? ['🐾', '👀', '❓'] :
-    mood === 'celebrate' ? ['🐾', '🎉', '✨', '💚'] :
-    ['🐾', '💜', '✨', '💛'];
+// Disabled on mobile — saves significant GPU compositing cost
+function FloatingPaws({ mood, isMobile }: { mood: EmotionalEntry; isMobile: boolean }) {
+  if (isMobile) return null;
+  const items = mood === 'worried' ? ['🐾', '💭'] :
+    mood === 'off' ? ['🐾', '👀'] :
+    mood === 'celebrate' ? ['🐾', '✨'] :
+    ['🐾', '💜'];
   return (
     <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
       {items.map((emoji, i) => (
         <motion.span
           key={`paw-${mood}-${i}`}
           className="absolute text-lg"
-          style={{ opacity: 0.08, left: `${10 + i * 22}%` }}
-          initial={{ y: '110vh', rotate: 0 }}
-          animate={{ y: '-10vh', rotate: [0, 15, -10, 5, 0] }}
-          transition={{ duration: 18 + i * 3, repeat: Infinity, ease: 'linear', delay: i * 4 }}
+          style={{ opacity: 0.06, left: `${15 + i * 30}%` }}
+          initial={{ y: '110vh' }}
+          animate={{ y: '-10vh' }}
+          transition={{ duration: 22 + i * 5, repeat: Infinity, ease: 'linear', delay: i * 6 }}
         >
           {emoji}
         </motion.span>
@@ -203,13 +228,13 @@ function getConcernBorder(mood: EmotionalEntry): string {
 }
 
 /* ── Floating Mood Particles inside chat ── */
-function MoodParticles({ mood }: { mood: EmotionalEntry }) {
+function MoodParticles({ mood, isMobile }: { mood: EmotionalEntry; isMobile: boolean }) {
   if (!mood) return null;
   const emojis = {
-    worried: ['😟', '💭', '😰', '🫂'],
-    off: ['🤔', '👀', '❓', '🔍'],
-    celebrate: ['🎉', '✨', '🎊', '🥳', '💚'],
-    checking: ['💛', '🐾', '💚', '✨'],
+    worried: isMobile ? ['😟', '🫂'] : ['😟', '💭', '😰', '🫂'],
+    off: isMobile ? ['🤔', '❓'] : ['🤔', '👀', '❓', '🔍'],
+    celebrate: isMobile ? ['🎉', '✨'] : ['🎉', '✨', '🎊', '🥳', '💚'],
+    checking: isMobile ? ['💛', '✨'] : ['💛', '🐾', '💚', '✨'],
   };
   const set = emojis[mood] || emojis.checking;
   return (
@@ -217,11 +242,11 @@ function MoodParticles({ mood }: { mood: EmotionalEntry }) {
       {set.map((e, i) => (
         <motion.span
           key={`${mood}-${i}`}
-          className="absolute text-xl"
-          style={{ opacity: 0.12, left: `${8 + i * 20}%`, fontSize: `${14 + i * 4}px` }}
-          initial={{ y: '110%', rotate: 0, scale: 0.5 }}
-          animate={{ y: '-10%', rotate: [0, 20, -15, 10, 0], scale: [0.5, 1.3, 1, 0.8], opacity: [0, 0.2, 0.15, 0] }}
-          transition={{ duration: 10 + i * 3, repeat: Infinity, ease: 'easeInOut', delay: i * 2 }}
+          className="absolute"
+          style={{ opacity: 0.08, left: `${10 + i * 28}%`, fontSize: `${14 + i * 3}px` }}
+          initial={{ y: '110%', scale: 0.5 }}
+          animate={{ y: '-10%', scale: [0.5, 1.2, 0.8] }}
+          transition={{ duration: 12 + i * 4, repeat: Infinity, ease: 'easeInOut', delay: i * 3 }}
         >
           {e}
         </motion.span>
@@ -249,6 +274,140 @@ function MoodReaction({ mood }: { mood: EmotionalEntry }) {
     </motion.span>
   );
 }
+
+/* ── Memoized message bubble ── */
+const MessageBubble = React.memo(function MessageBubble({
+  message,
+  index,
+  totalCount,
+  loading,
+  emotionalEntry,
+}: {
+  message: Message;
+  index: number;
+  totalCount: number;
+  loading: boolean;
+  emotionalEntry: EmotionalEntry;
+}) {
+  const isLast = index === totalCount - 1;
+  const isStreamingAssistant = isLast && message.role === 'assistant' && loading && message.content.length > 0;
+
+  return (
+    <motion.div
+      key={index}
+      initial={{ opacity: 0, y: 24, scale: 0.88, x: message.role === 'user' ? 30 : -30 }}
+      animate={{ opacity: 1, y: 0, scale: 1, x: 0 }}
+      transition={{ type: 'spring' as const, stiffness: 260, damping: 22, delay: index < 3 ? index * 0.06 : 0 }}
+      className={`flex w-full items-start gap-2 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+    >
+      {/* Assistant avatar — left side */}
+      {message.role === 'assistant' && (
+        <motion.div
+          className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center shadow-md bg-gradient-to-br from-violet-200 to-fuchsia-200"
+          whileHover={{ scale: 1.15, rotate: 10 }}
+          transition={{ type: 'spring' as const, stiffness: 400, damping: 15 }}
+        >
+          <PawPrint size={16} className="text-violet-700" />
+        </motion.div>
+      )}
+
+      <div className="flex flex-col max-w-[78%]">
+        <motion.div
+          whileHover={{ scale: 1.02, rotate: message.role === 'user' ? -0.5 : 0.5 }}
+          transition={{ type: 'spring' as const, stiffness: 350, damping: 20 }}
+          className={`relative px-4 py-3 ${
+            message.role === 'user'
+              ? `bg-gradient-to-r ${getSendButton(emotionalEntry).split(' ')[0]} ${getSendButton(emotionalEntry).split(' ')[1]} text-white shadow-lg shadow-purple-500/20 rounded-2xl rounded-br-sm`
+              : `${getAssistantBubble(emotionalEntry)} shadow-md rounded-2xl rounded-bl-sm`
+          } transition-colors duration-500`}
+        >
+          {message.role === 'assistant' && !isStreamingAssistant && isLast && !message.content.includes('Hey 👋') && (
+            <MoodReaction mood={emotionalEntry} />
+          )}
+          {message.image && (
+            <motion.img
+              src={message.image}
+              alt="Attached"
+              className="max-h-48 rounded-lg mb-2 object-cover"
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.4 }}
+            />
+          )}
+          {message.content && (
+            <p className="whitespace-pre-wrap text-sm leading-relaxed">
+              {message.content}
+              {isStreamingAssistant && (
+                <motion.span
+                  className="inline-block w-2 h-4 ml-1 bg-current opacity-60 rounded-full"
+                  animate={{ opacity: [0.2, 1, 0.2], scaleY: [0.6, 1, 0.6] }}
+                  transition={{ duration: 0.8, repeat: Infinity }}
+                />
+              )}
+            </p>
+          )}
+          {/* Feature Card */}
+          {message.featureCard && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ type: 'spring' as const, stiffness: 300, damping: 20 }}
+              className={`mt-1 rounded-xl border-2 p-3 ${message.featureCard.accent}`}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-lg">{message.featureCard.emoji}</span>
+                <span className="font-semibold text-sm text-gray-800">{message.featureCard.title}</span>
+              </div>
+              {message.featureCard.body && (
+                <p className="text-sm text-gray-700">{message.featureCard.body}</p>
+              )}
+              {message.featureCard.items && message.featureCard.items.length > 0 && (
+                <ul className="mt-1 space-y-1">
+                  {message.featureCard.items.map((item, i) => (
+                    <li key={i} className="text-sm text-gray-700 flex items-start gap-1">
+                      <span className="text-gray-400 mt-0.5">•</span>
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </motion.div>
+          )}
+        </motion.div>
+        <p className={`text-[10px] mt-1 opacity-40 ${message.role === 'user' ? 'text-right pr-1' : 'text-left pl-1'}`}>
+          {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        </p>
+        {/* Source citations */}
+        {message.sources && message.sources.length > 0 && (
+          <div className={`flex flex-wrap gap-1 mt-1.5 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            {message.sources.map((src, si) => (
+              <a
+                key={si}
+                href={src.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-full text-[10px] font-medium transition-colors"
+              >
+                <span>🔗</span>{src.label}
+              </a>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* User avatar — right side */}
+      {message.role === 'user' && (
+        <motion.div
+          className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center shadow-md bg-gradient-to-br from-purple-400 to-fuchsia-400 text-white"
+          whileHover={{ scale: 1.15, rotate: -10 }}
+          transition={{ type: 'spring' as const, stiffness: 400, damping: 15 }}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg>
+        </motion.div>
+      )}
+    </motion.div>
+  );
+});
 
 const STORAGE_KEY = 'pawpal_chat_state';
 const SESSIONS_INDEX_KEY = 'pawpal_sessions';
@@ -381,6 +540,7 @@ export default function CompanionChatPage() {
 
   const [chatTheme, setChatTheme] = useState<ChatTheme>('default');
   const [showThemePicker, setShowThemePicker] = useState(false);
+  const [showBurgerMenu, setShowBurgerMenu] = useState(false);
   useEffect(() => {
     const saved = localStorage.getItem('pawpal_chat_theme') as ChatTheme | null;
     if (saved) setChatTheme(saved);
@@ -402,6 +562,8 @@ export default function CompanionChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const isMobile = useIsMobile();
+  const pageVisible = usePageVisible();
 
   const [sessionId, setSessionId] = useState<string>(() => genId());
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -1082,39 +1244,38 @@ export default function CompanionChatPage() {
         )}
       </AnimatePresence>
 
-      {/* Animated ambient blobs */}
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={emotionalEntry || 'default'}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 1.5 }}
-          className="absolute inset-0 pointer-events-none"
-        >
-          {/* Blob 1 — large drift */}
+      {/* Animated ambient blobs — desktop only, mobile skips heavy blur compositing */}
+      {!isMobile && (
+        <AnimatePresence mode="wait">
           <motion.div
-            className="absolute -top-20 -left-20 w-[600px] h-[600px] rounded-full filter blur-[120px]"
-            style={{ backgroundColor: getBlobColor1(emotionalEntry), opacity: 0.5 }}
-            animate={{ x: [0, 60, -30, 0], y: [0, -40, 20, 0], scale: [1, 1.1, 0.95, 1] }}
-            transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut' }}
-          />
-          {/* Blob 2 — medium drift */}
-          <motion.div
-            className="absolute top-1/3 right-0 w-[500px] h-[500px] rounded-full filter blur-[100px]"
-            style={{ backgroundColor: getBlobColor2(emotionalEntry), opacity: 0.4 }}
-            animate={{ x: [0, -50, 40, 0], y: [0, 30, -20, 0], scale: [1, 0.9, 1.05, 1] }}
-            transition={{ duration: 15, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
-          />
-          {/* Blob 3 — small accent */}
-          <motion.div
-            className="absolute bottom-1/4 left-1/3 w-[400px] h-[400px] rounded-full filter blur-[80px]"
-            style={{ backgroundColor: getBlobColor3(emotionalEntry), opacity: 0.35 }}
-            animate={{ x: [0, 40, -60, 0], y: [0, -30, 50, 0], scale: [1, 1.15, 0.9, 1] }}
-            transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut', delay: 4 }}
-          />
-        </motion.div>
-      </AnimatePresence>
+            key={emotionalEntry || 'default'}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 1.5 }}
+            className="absolute inset-0 pointer-events-none"
+          >
+            <motion.div
+              className="absolute -top-20 -left-20 w-[600px] h-[600px] rounded-full filter blur-[120px]"
+              style={{ backgroundColor: getBlobColor1(emotionalEntry), opacity: 0.5 }}
+              animate={{ x: [0, 60, -30, 0], y: [0, -40, 20, 0], scale: [1, 1.1, 0.95, 1] }}
+              transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut' }}
+            />
+            <motion.div
+              className="absolute top-1/3 right-0 w-[500px] h-[500px] rounded-full filter blur-[100px]"
+              style={{ backgroundColor: getBlobColor2(emotionalEntry), opacity: 0.4 }}
+              animate={{ x: [0, -50, 40, 0], y: [0, 30, -20, 0], scale: [1, 0.9, 1.05, 1] }}
+              transition={{ duration: 15, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
+            />
+            <motion.div
+              className="absolute bottom-1/4 left-1/3 w-[400px] h-[400px] rounded-full filter blur-[80px]"
+              style={{ backgroundColor: getBlobColor3(emotionalEntry), opacity: 0.35 }}
+              animate={{ x: [0, 40, -60, 0], y: [0, -30, 50, 0], scale: [1, 1.15, 0.9, 1] }}
+              transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut', delay: 4 }}
+            />
+          </motion.div>
+        </AnimatePresence>
+      )}
 
       {/* Subtle noise texture overlay */}
       <div
@@ -1127,121 +1288,164 @@ export default function CompanionChatPage() {
       />
 
       {/* Floating background paw particles */}
-      <FloatingPaws mood={emotionalEntry} />
+      {pageVisible && <FloatingPaws mood={emotionalEntry} isMobile={isMobile} />}
 
       {/* Nav Bar */}
       <div className="bg-white/80 backdrop-blur-xl border-b border-purple-100/50 px-4 py-3 shadow-sm safe-top z-20">
         <div className="container mx-auto max-w-4xl flex items-center justify-between">
-          {/* Left — sidebar toggle + home */}
-          <div className="flex items-center gap-2">
-            <motion.button
-              onClick={() => setShowSidebar(p => !p)}
-              className="p-2 rounded-xl hover:bg-purple-50 transition text-gray-500 hover:text-purple-600"
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              title={lang === 'id' ? 'Riwayat chat' : 'Chat history'}
-            >
-              <PanelLeft size={18} />
-            </motion.button>
-            <motion.a
-              href="/"
-              className="flex items-center gap-1.5 text-purple-600 hover:text-purple-800 transition font-semibold text-sm group"
-              whileHover={{ x: -3 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              <Home size={16} />
-              <span className="group-hover:underline underline-offset-2 hidden sm:inline">{lang === 'id' ? 'Beranda' : 'Home'}</span>
-            </motion.a>
-          </div>
+          {/* Left — sidebar toggle */}
+          <motion.button
+            onClick={() => setShowSidebar(p => !p)}
+            className="p-2 rounded-xl hover:bg-purple-50 transition text-gray-500 hover:text-purple-600"
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            title={lang === 'id' ? 'Riwayat chat' : 'Chat history'}
+          >
+            <PanelLeft size={18} />
+          </motion.button>
 
-          {/* Center — Logo */}
-          <motion.div
-            className="flex items-center gap-2"
-            animate={{ y: [0, -2, 0] }}
-            transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+          {/* Center — Logo (navigates to home) */}
+          <motion.a
+            href="/"
+            className="flex items-center gap-1.5"
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.97 }}
           >
             <span className="text-xl">🐾</span>
-            <span className="font-black text-xl bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 bg-clip-text text-transparent animate-gradient">PawPal</span>
-          </motion.div>
+            <span className={`font-black text-xl bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 bg-clip-text text-transparent ${isMobile ? '' : 'animate-gradient'}`}>PawPal</span>
+          </motion.a>
 
-          {/* Right actions */}
+          {/* Right — desktop inline, mobile burger */}
           <div className="flex items-center gap-1.5">
-            {/* Push notification bell */}
-            {mounted && 'Notification' in window && pushPermission !== 'granted' && (
-              <motion.button
-                onClick={requestPushPermission}
-                className="p-2 rounded-xl hover:bg-purple-50 transition text-gray-400 hover:text-purple-600"
-                whileHover={{ scale: 1.2, rotate: 15 }}
-                whileTap={{ scale: 0.9 }}
-                title={t('nav_notifications_enable', lang)}
-              >
-                <Bell size={18} />
-              </motion.button>
-            )}
-            {mounted && 'Notification' in window && pushPermission === 'granted' && (
-              <motion.div
-                className="p-2 text-purple-500"
-                title={t('nav_notifications_on', lang)}
-                animate={{ rotate: [0, 10, -10, 0] }}
-                transition={{ type: 'tween', duration: 2, repeat: Infinity }}
-              >
-                <Bell size={18} />
-              </motion.div>
-            )}
+            {/* Desktop inline actions */}
+            <div className="hidden sm:flex items-center gap-1.5">
+              {mounted && 'Notification' in window && pushPermission !== 'granted' && (
+                <motion.button
+                  onClick={requestPushPermission}
+                  className="p-2 rounded-xl hover:bg-purple-50 transition text-gray-400 hover:text-purple-600"
+                  whileHover={{ scale: 1.2, rotate: 15 }}
+                  whileTap={{ scale: 0.9 }}
+                  title={t('nav_notifications_enable', lang)}
+                >
+                  <Bell size={18} />
+                </motion.button>
+              )}
+              {mounted && 'Notification' in window && pushPermission === 'granted' && (
+                <motion.div
+                  className="p-2 text-purple-500"
+                  title={t('nav_notifications_on', lang)}
+                  animate={{ rotate: [0, 10, -10, 0] }}
+                  transition={{ type: 'tween', duration: 2, repeat: Infinity }}
+                >
+                  <Bell size={18} />
+                </motion.div>
+              )}
 
-            {/* Theme picker */}
-            <div className="relative">
+              <div className="relative">
+                <motion.button
+                  onClick={() => setShowThemePicker(p => !p)}
+                  className="p-2 rounded-xl hover:bg-purple-50 transition text-gray-400 hover:text-purple-600"
+                  whileHover={{ scale: 1.2 }}
+                  whileTap={{ scale: 0.9 }}
+                  title="Change background theme"
+                >
+                  <Palette size={18} />
+                </motion.button>
+                <AnimatePresence>
+                  {showThemePicker && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.85, y: -6 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.85, y: -6 }}
+                      transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+                      className="absolute right-0 top-10 bg-white/95 backdrop-blur-xl border border-purple-100 rounded-2xl shadow-xl p-3 flex flex-col gap-1.5 z-50 min-w-[130px]"
+                    >
+                      {(Object.keys(THEME_LABELS) as ChatTheme[]).map(key => (
+                        <button
+                          key={key}
+                          onClick={() => handleSetTheme(key)}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all ${chatTheme === key ? 'bg-purple-100 text-purple-700' : 'hover:bg-gray-50 text-gray-600'}`}
+                        >
+                          <span className={`w-3 h-3 rounded-full ${THEME_LABELS[key].dot} flex-shrink-0`} />
+                          {THEME_LABELS[key].label}
+                          {chatTheme === key && <span className="ml-auto text-purple-500">✓</span>}
+                        </button>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
               <motion.button
-                onClick={() => setShowThemePicker(p => !p)}
-                className="p-2 rounded-xl hover:bg-purple-50 transition text-gray-400 hover:text-purple-600"
-                whileHover={{ scale: 1.2 }}
-                whileTap={{ scale: 0.9 }}
-                title="Change background theme"
+                onClick={startNewChat}
+                className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-red-500 hover:bg-red-50 px-3 py-1.5 rounded-xl transition"
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                title={t('nav_new_chat', lang)}
               >
-                <Palette size={18} />
+                <MessageCircle size={18} />
+                <span className="font-medium">{t('nav_new_chat', lang)}</span>
+              </motion.button>
+            </div>
+
+            {/* Mobile burger menu */}
+            <div className="sm:hidden relative">
+              <motion.button
+                onClick={() => setShowBurgerMenu(p => !p)}
+                className="p-2 rounded-xl hover:bg-purple-50 transition text-gray-500 hover:text-purple-600"
+                whileTap={{ scale: 0.9 }}
+              >
+                <Menu size={20} />
               </motion.button>
               <AnimatePresence>
-                {showThemePicker && (
+                {showBurgerMenu && (
                   <motion.div
-                    initial={{ opacity: 0, scale: 0.85, y: -6 }}
+                    initial={{ opacity: 0, scale: 0.9, y: -4 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.85, y: -6 }}
+                    exit={{ opacity: 0, scale: 0.9, y: -4 }}
                     transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-                    className="absolute right-0 top-10 bg-white/95 backdrop-blur-xl border border-purple-100 rounded-2xl shadow-xl p-3 flex flex-col gap-1.5 z-50 min-w-[130px]"
+                    className="absolute right-0 top-10 bg-white/95 backdrop-blur-xl border border-purple-100 rounded-2xl shadow-xl p-2 flex flex-col gap-1 z-50 min-w-[170px]"
                   >
+                    {/* Notification toggle */}
+                    {mounted && 'Notification' in window && pushPermission !== 'granted' && (
+                      <button
+                        onClick={() => { requestPushPermission(); setShowBurgerMenu(false); }}
+                        className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium text-gray-600 hover:bg-purple-50 hover:text-purple-700 transition w-full"
+                      >
+                        <Bell size={16} />
+                        {t('nav_notifications_enable', lang)}
+                      </button>
+                    )}
+                    {mounted && 'Notification' in window && pushPermission === 'granted' && (
+                      <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium text-purple-600 bg-purple-50">
+                        <Bell size={16} />
+                        {t('nav_notifications_on', lang)}
+                      </div>
+                    )}
+                    {/* Theme picker items */}
                     {(Object.keys(THEME_LABELS) as ChatTheme[]).map(key => (
                       <button
                         key={key}
-                        onClick={() => handleSetTheme(key)}
-                        className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all ${chatTheme === key ? 'bg-purple-100 text-purple-700' : 'hover:bg-gray-50 text-gray-600'}`}
+                        onClick={() => { handleSetTheme(key); setShowBurgerMenu(false); }}
+                        className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition-all w-full ${chatTheme === key ? 'bg-purple-100 text-purple-700' : 'hover:bg-gray-50 text-gray-600'}`}
                       >
                         <span className={`w-3 h-3 rounded-full ${THEME_LABELS[key].dot} flex-shrink-0`} />
                         {THEME_LABELS[key].label}
-                        {chatTheme === key && <span className="ml-auto text-purple-500">✓</span>}
+                        {chatTheme === key && <span className="ml-auto text-purple-500 text-xs">✓</span>}
                       </button>
                     ))}
+                    <div className="border-t border-gray-100 my-1" />
+                    <button
+                      onClick={() => { startNewChat(); setShowBurgerMenu(false); }}
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium text-gray-600 hover:bg-red-50 hover:text-red-500 transition w-full"
+                    >
+                      <MessageCircle size={16} />
+                      {t('nav_new_chat', lang)}
+                    </button>
                   </motion.div>
                 )}
               </AnimatePresence>
             </div>
-
-            {/* New chat */}
-            <motion.button
-              onClick={startNewChat}
-              className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-red-500 hover:bg-red-50 px-3 py-1.5 rounded-xl transition"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              title={t('nav_new_chat', lang)}
-            >
-              <motion.div
-                className="inline-block"
-                animate={{ scale: [1, 1.15, 1] }}
-                transition={{ duration: 2, repeat: Infinity }}
-              >
-                <MessageCircle size={18} />
-              </motion.div>
-              <span className="font-medium">{t('nav_new_chat', lang)}</span>
-            </motion.button>
           </div>
         </div>
       </div>
@@ -1348,128 +1552,19 @@ export default function CompanionChatPage() {
         <div className={`flex-1 flex flex-col backdrop-blur-sm rounded-2xl shadow-2xl overflow-hidden z-10 relative transition-all duration-700 ${getChatContainerRing(emotionalEntry)} ${getChatBg(emotionalEntry, chatTheme)}`}>
           {/* Subtle pulsing glow ring */}
           <div className={`absolute inset-0 rounded-2xl pointer-events-none transition-opacity duration-700 ${getGlowClass(emotionalEntry)} opacity-50 animate-glow-pulse`} />
-          <MoodParticles mood={emotionalEntry} />
+          {pageVisible && <MoodParticles mood={emotionalEntry} isMobile={isMobile} />}
           {/* Messages */}
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3" style={{ WebkitOverflowScrolling: 'touch' }}>
-            {messages.map((message, index) => {
-              const isLast = index === messages.length - 1;
-              const isStreamingAssistant = isLast && message.role === 'assistant' && loading && message.content.length > 0;
-              return (
-                <motion.div
-                  key={index}
-                  initial={{ opacity: 0, y: 24, scale: 0.88, x: message.role === 'user' ? 30 : -30 }}
-                  animate={{ opacity: 1, y: 0, scale: 1, x: 0 }}
-                  transition={{ type: 'spring' as const, stiffness: 260, damping: 22, delay: index < 3 ? index * 0.06 : 0 }}
-                  className={`flex w-full items-start gap-2 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  {/* Assistant avatar — left side */}
-                  {message.role === 'assistant' && (
-                    <motion.div
-                      className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center shadow-md bg-gradient-to-br from-violet-200 to-fuchsia-200"
-                      whileHover={{ scale: 1.15, rotate: 10 }}
-                      transition={{ type: 'spring' as const, stiffness: 400, damping: 15 }}
-                    >
-                      <PawPrint size={16} className="text-violet-700" />
-                    </motion.div>
-                  )}
-
-                  <div className="flex flex-col max-w-[78%]">
-                    <motion.div
-                      whileHover={{ scale: 1.02, rotate: message.role === 'user' ? -0.5 : 0.5 }}
-                      transition={{ type: 'spring' as const, stiffness: 350, damping: 20 }}
-                      className={`relative px-4 py-3 ${
-                        message.role === 'user'
-                          ? `bg-gradient-to-r ${getSendButton(emotionalEntry).split(' ')[0]} ${getSendButton(emotionalEntry).split(' ')[1]} text-white shadow-lg shadow-purple-500/20 rounded-2xl rounded-br-sm`
-                          : `${getAssistantBubble(emotionalEntry)} shadow-md rounded-2xl rounded-bl-sm`
-                      } transition-colors duration-500`}
-                    >
-                      {message.role === 'assistant' && !isStreamingAssistant && index === messages.length - 1 && !message.content.includes('Hey 👋') && (
-                        <MoodReaction mood={emotionalEntry} />
-                      )}
-                      {message.image && (
-                        <motion.img
-                          src={message.image}
-                          alt="Attached"
-                          className="max-h-48 rounded-lg mb-2 object-cover"
-                          initial={{ opacity: 0, scale: 0.9 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          transition={{ duration: 0.4 }}
-                        />
-                      )}
-                      {message.content && (
-                        <p className="whitespace-pre-wrap text-sm leading-relaxed">
-                          {message.content}
-                          {isStreamingAssistant && (
-                            <motion.span
-                              className="inline-block w-2 h-4 ml-1 bg-current opacity-60 rounded-full"
-                              animate={{ opacity: [0.2, 1, 0.2], scaleY: [0.6, 1, 0.6] }}
-                              transition={{ duration: 0.8, repeat: Infinity }}
-                            />
-                          )}
-                        </p>
-                      )}
-                      {/* Feature Card */}
-                      {message.featureCard && (
-                        <motion.div
-                          initial={{ opacity: 0, y: 8 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ type: 'spring' as const, stiffness: 300, damping: 20 }}
-                          className={`mt-1 rounded-xl border-2 p-3 ${message.featureCard.accent}`}
-                        >
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-lg">{message.featureCard.emoji}</span>
-                            <span className="font-semibold text-sm text-gray-800">{message.featureCard.title}</span>
-                          </div>
-                          {message.featureCard.body && (
-                            <p className="text-sm text-gray-700">{message.featureCard.body}</p>
-                          )}
-                          {message.featureCard.items && message.featureCard.items.length > 0 && (
-                            <ul className="mt-1 space-y-1">
-                              {message.featureCard.items.map((item, i) => (
-                                <li key={i} className="text-sm text-gray-700 flex items-start gap-1">
-                                  <span className="text-gray-400 mt-0.5">•</span>
-                                  <span>{item}</span>
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-                        </motion.div>
-                      )}
-                    </motion.div>
-                    <p className={`text-[10px] mt-1 opacity-40 ${message.role === 'user' ? 'text-right pr-1' : 'text-left pl-1'}`}>
-                      {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </p>
-                    {/* Source citations */}
-                    {message.sources && message.sources.length > 0 && (
-                      <div className={`flex flex-wrap gap-1 mt-1.5 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        {message.sources.map((src, si) => (
-                          <a
-                            key={si}
-                            href={src.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-full text-[10px] font-medium transition-colors"
-                          >
-                            <span>🔗</span>{src.label}
-                          </a>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* User avatar — right side */}
-                  {message.role === 'user' && (
-                    <motion.div
-                      className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center shadow-md bg-gradient-to-br from-purple-400 to-fuchsia-400 text-white"
-                      whileHover={{ scale: 1.15, rotate: -10 }}
-                      transition={{ type: 'spring' as const, stiffness: 400, damping: 15 }}
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg>
-                    </motion.div>
-                  )}
-                </motion.div>
-              );
-            })}
+            {messages.map((message, index) => (
+              <MessageBubble
+                key={index}
+                message={message}
+                index={index}
+                totalCount={messages.length}
+                loading={loading}
+                emotionalEntry={emotionalEntry}
+              />
+            ))}
 
             {loading && !(messages[messages.length - 1]?.role === 'assistant' && messages[messages.length - 1]?.content.length > 0) && (
               <motion.div
